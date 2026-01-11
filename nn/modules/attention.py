@@ -14,10 +14,11 @@ class AttentionHead:
         """
         x: (B, T, C)
         """
+        x = as_tensor(x)
         B, T, C = x.shape
 
         # causal mask
-        tril = np.tril(np.ones((T, T)))
+        tril = Tensor(np.tril(np.ones((T, T))))
 
         # projections
         Q = x @ self.Wq   # (B, T, h)
@@ -25,27 +26,20 @@ class AttentionHead:
         V = x @ self.Wv   # (B, T, h)
 
         # attention scores
-        scores = Q @ K.transpose(0, 2, 1) / np.sqrt(K.shape[-1])
+        # scores = Q @ K.transpose(0, 2, 1) / np.sqrt(K.shape[-1])
+        scores = (Q @ K.transpose(0, 2, 1)) * (K.shape[-1] ** -0.5)  # (B, T, T)
         
 
         # apply causal mask
-        scores = np.where(tril, scores, -1e9)
+        scores = Tensor.where(tril, scores.data, -1e9)
 
         # softmax
-        exp_scores = np.exp(scores - scores.max(axis=-1, keepdims=True))
+        exp_scores = (scores - scores.max(axis=-1, keepdims=True)).exp()
         weights = exp_scores / exp_scores.sum(axis=-1, keepdims=True)
 
         # weighted sum
-        out = weights @ V   # (B, T, h)
-        out = Tensor(out)
-        out.children = ()
-        return out
-
-
-# -----------------------------
-# Test attention head
-# -----------------------------
-a = AttentionHead(emb_size=6)
-x = np.random.randn(2, 4, 6)
-out = a.forward(x)
-print("Attention output shape:", out.shape)
+        self.out = weights @ V   # (B, T, h)
+        return self.out
+    
+    def params(self):
+        return [self.Wq, self.Wk, self.Wv]
